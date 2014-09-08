@@ -44,7 +44,11 @@ class ResourceFilter:
         return ((self.group is None or self.group == rid.group) and
                 (self.instance is None or self.instance == rid.instance) and
                 (self.type is None or self.type == rid.type))
-
+    def __str__(self):
+        group = ("%08x"%self.group) if self.group is not None else ""
+        instance = ("%16x"%self.instance) if self.instance is not None else ""
+        type = ("%08x"%self.type) if self.type is not None else ""
+        return ":".join((group,instance,type))
 
 foo = [None]
 class DBPFFile:
@@ -57,7 +61,7 @@ class DBPFFile:
         self.file = open(name, "rb")
         self._index_cache = None
         self._read_header()
-        self._index_cache = list(self.scan_index())
+        self._index_cache = list(self.scan_index(full_entries=True))
     def _read_header(self):
 
         self.file.seek(0)
@@ -77,13 +81,20 @@ class DBPFFile:
         """This is only ever intended to be called with no arguments; the
         dword kwarg is a function static"""
         return dword.unpack(self.file.read(4))[0]
-    def scan_index(self, filter=None):
+    def scan_index(self, filter=None, full_entries=False):
+        """Iterate over the items that match a filter"""
+        if full_entries:
+            xform = lambda x: x
+        else:
+            xform = lambda x: x.id
         if self._index_cache is not None:
             if filter is None:
-                yield from self._index_cache
+                for x in self._index_cache:
+                    yield xform(x)
             else:
-                yield from (_ for _ in self._index_cache
-                              if filter.match(_.id))
+                for x in self._index_cache:
+                    if filter.match(x.id):
+                        yield xform(x)
             return
         if self._index_off == 0:
             raise FormatException("Missing index")
@@ -115,15 +126,18 @@ class DBPFFile:
             entry_size = entry_size & 0x7FFFFFFF
             rid = ResourceID(entry_group, (entry_instance_ex << 32) | entry_instance, entry_type)
             if filter is None or filter.match(rid):
-                yield IndexEntry(rid, entry_offset, entry_size,
-                                 entry_size_decompressed, entry_compressed)
+                if full_entries:
+                    yield IndexEntry(rid, entry_offset, entry_size,
+                                     entry_size_decompressed, entry_compressed)
+                else:
+                    yield rid
             
     def __getitem__(self, item):
         if isinstance(item, int):
             item = self._index_cache[item]
         elif not isinstance(item, IndexEntry):
             # It must be a filter
-            itemlist = self.scan_index(item)
+            itemlist = self.scan_index(item, full_entries=True)
             try:
                 item = next(itemlist)
             except StopIteration:

@@ -2,3 +2,7 @@
 *~
 __pycache__
 Untitled*.ipynb
+*.pyc
+*.egg
+setuptools-*
+*.egg-info
