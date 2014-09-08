@@ -17,7 +17,7 @@ output file existed before the build step executed, much less depend
 on its prior contents. This means that for the low-level build tool,
 if you maintain your assets as loose files in a directory and then run
 
-  s4py package assemble -o mymod.package sourcedir
+    s4py package assemble -o mymod.package sourcedir
 
 `mymod.package` will contain ONLY the resources that were in
 sourcedir.
