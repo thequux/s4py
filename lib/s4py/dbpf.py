@@ -23,6 +23,8 @@ class ResourceID(namedtuple("ResourceID", "group instance type")):
         this is the same as __eq__, but ResourceFilters must implement this function"""
         return rid == self
 
+    def as_filename(self):
+        return str(self)
     @property
     def deleted(self):
         return self.compression[0] == 0xFFE0
@@ -57,11 +59,12 @@ class DBPFFile:
     _CONST_GROUP = 2
     _CONST_INSTAMCE_EX = 4
     
-    def __init__(self, name):
+    def __init__(self, name, prescan_index=True):
         self.file = open(name, "rb")
         self._index_cache = None
         self._read_header()
-        self._index_cache = list(self.scan_index(full_entries=True))
+        if prescan_index:
+            self._index_cache = list(self.scan_index(full_entries=True))
     def _read_header(self):
 
         self.file.seek(0)
@@ -97,7 +100,11 @@ class DBPFFile:
                         yield xform(x)
             return
         if self._index_off == 0:
-            raise FormatException("Missing index")
+            if self._index_count == 0:
+                # Empty DBPF file.
+                return
+            else:
+                raise FormatException("Missing index")
         self.file.seek(self._index_off)
         flags = self._get_dword()
 
@@ -107,7 +114,7 @@ class DBPFFile:
             entry_group = self._get_dword()
         if flags & self._CONST_INSTAMCE_EX:
             entry_instance_ex = self._get_dword()
-        
+
         for n in range(self._index_count):
             if not flags & self._CONST_TYPE:
                 entry_type = self._get_dword()
@@ -126,11 +133,17 @@ class DBPFFile:
             entry_size = entry_size & 0x7FFFFFFF
             rid = ResourceID(entry_group, (entry_instance_ex << 32) | entry_instance, entry_type)
             if filter is None or filter.match(rid):
+                # The process of reading the index may be interleaved
+                # with reading the contents of the file. This way, we
+                # don't lose the file pointer
+                cur_pos = self.file.tell()
                 if full_entries:
                     yield IndexEntry(rid, entry_offset, entry_size,
                                      entry_size_decompressed, entry_compressed)
                 else:
                     yield rid
+                self.file.seek(cur_pos)
+
             
     def __getitem__(self, item):
         if isinstance(item, int):

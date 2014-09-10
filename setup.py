@@ -14,7 +14,8 @@ setup(
     install_requires = ['Click'],
     entry_points = {
         'console_scripts': [
-            's4py=sims4.s4py:main',
+            # This way, you can also use python -ms4py
+            's4py=s4py.__main__:main',
         ],
     },
 )

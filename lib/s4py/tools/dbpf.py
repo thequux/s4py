@@ -1,5 +1,6 @@
 import click
-import sims4.dbpf
+import s4py.dbpf
+import os, os.path
 from .. import tools
 
 @tools.main.group()
@@ -32,27 +33,37 @@ def parseFilter(s):
         # ResourceID's match function is somewhat faster than
         # ResourceFilter's match function, so we have this small
         # optimization
-        return sims4.dbpf.ResourceID(group, instance, type)
-    return sims4.dbpf.ResourceFilter(group, instance, type)    
+        return s4py.dbpf.ResourceID(group, instance, type)
+    return s4py.dbpf.ResourceFilter(group, instance, type)    
 
     
 @dbpf.command(help="extract files from a package")
 @click.option("--filter", multiple=True)
-@click.option('-o','--outdir', help="Output directory")
+@click.option('-o','--outdir', help="Output directory", default="gen")
 @click.argument("file")
 def extract(file, filter, outdir):
-    filters = AnyFilter(parseFilter(f) for f in filter)
-    dbfile = sims4.dbpf.DBPFFile(file)
-    odir = os.mkdir
+    if filter:
+        filters = AnyFilter(parseFilter(f) for f in filter)
+    else:
+        filters = None
+    dbfile = s4py.dbpf.DBPFFile(file)
+    os.makedirs(outdir, exist_ok=True)
     for idx in dbfile.scan_index(filters, full_entries=True):
-        pass
+        rid = idx.id
+        with open(os.path.join(outdir, rid.as_filename()), "wb") as ofile:
+            print(rid)
+            ofile.write(dbfile[idx])
+        
 
 @dbpf.command(help="list files in a package")
 @click.option("--filter", multiple=True)
 @click.argument("file")
 def ls(file, filter):
-    filters = AnyFilter(parseFilter(f) for f in filter)
-    dbfile = sims4.dbpf.DBPFFile(file)
+    if filter:
+        filters = AnyFilter(parseFilter(f) for f in filter)
+    else:
+        filters = None
+    dbfile = s4py.dbpf.DBPFFile(file, prescan_index=True)
     for idx in dbfile.scan_index(filters):
         print(idx)
 

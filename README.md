@@ -20,7 +20,7 @@ if you maintain your assets as loose files in a directory and then run
     s4py package assemble -o mymod.package sourcedir
 
 `mymod.package` will contain ONLY the resources that were in
-sourcedir.
+sourcedir. (*NOTE:* the "package assemble" command doesn't exist yet)
 
 Status
 ======
