@@ -20,25 +20,23 @@
 # this project
 
 __all__ = (
-    'fnv1_64',
-    'fnv1_32',
     'fnv1',
-    'FNV1_32',
-    'FNV1_64',
 )
 
 from collections import namedtuple
 
 FnvParams = namedtuple('FnvParams', 'init prime mask')
-FNV1_64 = FnvParams(0xCBF29CE484222325,
-                    0x100000001b3,
-                    (1 << 64) - 1)
 
-FNV1_32 = FnvParams(0x811c9dc5,
-                    0x1000193,
-                    (1 << 32) - 1)
+_fnv_params = {
+    32: FnvParams(0x811c9dc5,
+                  0x1000193,
+                  (1 << 32) - 1),
+    64: FnvParams(0xCBF29CE484222325,
+                  0x100000001b3,
+                  (1 << 64) - 1),
+}
 
-def fnv1(bstr, params):
+def _fnv1(bstr, params):
     init, prime, mask = params
     h = init
     for byte in bstr:
@@ -46,5 +44,9 @@ def fnv1(bstr, params):
         h = h ^ byte
     return h
 
-def fnv1_32(bstr): return fnv1(bstr, FNV1_32)
-def fnv1_64(bstr): return fnv1(bstr, FNV1_64)
+def fnv1(bstr, bits):
+    """Return the bits-bit hash of bstr.
+
+    32 and 64-bit hashes are supported
+    """
+    return _fnv1(bstr, _fnv_params[bits])
