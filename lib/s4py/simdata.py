@@ -160,3 +160,83 @@ class SimDataReader(BReader):
                 cSchemaPos = self.get_off32()
                 columns.append(self._SchemaColumn(cName, cDataType, cFlags, cOffset, cSchemaPos))
         return self._Schema(name, schemaHash, schemaSize, tuple(columns)) # Tuplifying the columns results in less work for the GC
+
+    def _read_primitive(self, datatype):
+        if datatype == 0: # BOOL
+            # Boolean
+            return self.get_int8() == 0
+        elif datatype == 1: # CHAR8
+            return self.get_uint8().decode("latin1")
+        elif datatype == 2: # INT8
+            return self.get_int8()
+        elif datatype == 3: # UINT8
+            return self.get_uint8()
+        elif datatype == 4: # INT16
+            self.align(2)
+            return self.get_int16()
+        elif datatype == 5: # UINT16
+            self.align(2)
+            return self.get_uint16()
+        elif datatype == 6: # INT32
+            self.align(4)
+            return self.get_int32()
+        elif datatype == 7: # UINT32
+            self.align(4)
+            return self.get_uint32()
+        elif datatype == 8: # INT64
+            self.align(8)
+            return self.get_int64()
+        elif datatype == 9: # UINT64
+            self.align(8)
+            return self.get_uint64()
+        elif datatype == 10: # FLOAT
+            self.align(4)
+            return struct.unpack("<f", self.get_raw_bytes(4))[0]
+        elif datatype == 11: # STRING8
+            self.align(4)
+            return self.get_relstring()
+        elif datatype == 12:    # HASHEDSTRING8
+            self.align(4)
+            res = self.get_relstring()
+            shash = self.get_uint32()
+            # TODO: Validate hash
+            return res
+        elif datatype == 13:    # OBJECT
+            self.align(4)
+            off = self.get_off32()
+            return ('object', off)
+            # TODO: figure out how to read object from offset
+        elif datatype == 14:    # VECTOR
+            self.align(4)
+            off = self.get_off32()
+            count = self.get_uint32()
+            return ('vector', off, count)
+            # TODO: Read members based on table info
+        elif datatype == 15:    # FLOAT2
+            self.align(4)
+            return struct.unpack("<ff", self.get_raw_bytes(8))
+        elif datatype == 16:    # FLOAT3
+            self.align(4)
+            return struct.unpack("<fff", self.get_raw_bytes(12))
+        elif datatype == 17:    # FLOAT4
+            self.align(4)
+            return struct.unpack("<ffff", self.get_raw_bytes(16))
+        elif datatype == 18:    # TABLESETREFERENCE
+            self.align(8)
+            return ('tablesetref', self.read_uint64())
+        elif datatype == 19:    # RESOURCEKEY
+            self.align(8)
+            instance = self.read_uint64()
+            typ = self.read_uint32()
+            group = self.read_uint32()
+            return dbpf.ResourceID(group, instance, typ)
+        elif datatype == 20:    # LOCKEY
+            self.align(4)
+            return ('lockey', self.read_uint32())
+        else:
+            # Datatype 21 is defined as "TYPE_UNDEFINED". This is not
+            # in any way useful.
+
+            # TODO: Figure out if type 21 is used anywhere, and if so,
+            # reverse it.
+            raise FormatException("Unknown resource type %d" % (datatype,))
