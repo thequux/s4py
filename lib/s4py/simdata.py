@@ -29,7 +29,12 @@ class BReader:
     def off(self, val):
         assert val <= len(self.raw) # <= so that you can point one past the end
         self._off = val
-    
+
+    def get_raw_bytes(self, count):
+        res = self.raw[self.off:self.off+count]
+        self.off += count
+        return res
+
     def get_off32(self):
         """Read an offset relative to the current position; returns the absolute offset"""
         off = self.off
@@ -38,23 +43,23 @@ class BReader:
             return None
         else:
             return off + res
-    def get_int32(self):
-        res = int.from_bytes(self.raw[self.off:self.off+4], "little", signed=True)
-        self.off += 4
-        return res
-    def get_uint32(self):
-        res = int.from_bytes(self.raw[self.off:self.off+4], "little", signed=False)
-        self.off += 4
-        return res
 
-    def get_int16(self):
-        res = int.from_bytes(self.raw[self.off:self.off+2], "little", signed=True)
-        self.off += 2
-        return res
-    def get_uint16(self):
-        res = int.from_bytes(self.raw[self.off:self.off+2], "little", signed=False)
-        self.off += 2
-        return res
+    def _get_int(self, size, signed=False):
+        return int.from_bytes(self.get_raw_bytes(size)
+                              "little", signed=signed)
+
+    def get_uint64(self): return self._get_int(8, False)
+    def get_int64(self): return self._get_int(8, True)
+
+    def get_uint32(self): return self._get_int(4, False)
+    def get_int32(self): return self._get_int(4, True)
+
+    def get_uint16(self): return self._get_int(2, False)
+    def get_int16(self): return self._get_int(2, True)
+
+    def get_uint8(self): return self._get_int(1, False)
+    def get_int8(self): return self._get_int(1, True)
+
 
     def get_string(self):
         """Read a null-terminated string"""
@@ -71,6 +76,10 @@ class BReader:
                 return self.get_string()
         else:
             return None
+
+    def align(self, size):
+        assert size & (size - 1) == 0, "Must align to a power of two"
+        self.off = (self.off + size - 1) & (-size)
 
     @contextlib.contextmanager
     def at(self, posn):
