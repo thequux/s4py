@@ -67,7 +67,7 @@ class BReader:
         res = self.raw[self.off:endOff]
         self.off = endOff + 1
         return res
-        
+
     def get_relstring(self):
         """Read a string from the next offset, read as an off32"""
         off = self.get_off32()
@@ -106,7 +106,7 @@ class SimDataReader(BReader):
         if bstr[0:4] != b'DATA':
             raise FormatException("This is not a valid simdata file")
         self.off = 4
-        
+
         version = self.get_uint32()
         tablePos = self.get_off32()
         numTables = self.get_int32()
@@ -125,7 +125,6 @@ class SimDataReader(BReader):
         for _ in range(numTables):
             print("Reading table at %x" %( self.off,))
             tables.append(self._readTable())
-        
 
     def _readTable(self):
         # f is a BReader
