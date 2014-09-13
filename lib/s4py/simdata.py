@@ -3,7 +3,7 @@
 # likely to change *substantially* over the coming weeks.
 
 from collections import namedtuple
-from . import fnv1
+from . import fnv1, dbpf
 import contextlib
 import struct
 
@@ -96,74 +96,68 @@ class BReader:
         finally:
             self.off = saved
 
-        
-
-class SimData:
+class SimDataReader(BReader):
 
     _TableData = namedtuple("_TableData", "name schema data_type row_size row_pos row_count")
     _Schema = namedtuple("_Schema", "name schema_hash size columns")
     _SchemaColumn = namedtuple("_SchemaColumn", "name data_type flags offset schema_pos")
-    def __init__(self):
-        pass
-
-    def fromBytes(self, bstr):
-        f = BReader(bstr)
+    def __init__(self, bstr):
+        super().__init__(bstr)
         if bstr[0:4] != b'DATA':
             raise FormatException("This is not a valid simdata file")
-        f.off = 4
+        self.off = 4
         
-        version = f.get_uint32()
-        tablePos = f.get_off32()
-        numTables = f.get_int32()
-        schemaPos = f.get_off32()
-        numSchemas = f.get_int32()
+        version = self.get_uint32()
+        tablePos = self.get_off32()
+        numTables = self.get_int32()
+        schemaPos = self.get_off32()
+        numSchemas = self.get_int32()
 
-        f.off = tablePos
-        tables = []
-        schemas = {}
-        for _ in range(numTables):
-            print("Reading table at %x" %( f.off,))
-            tables.append(self._readTable(f))
-        
-        f.off = schemaPos
+        self.tables = tables = []
+        self.schemas = schemas = {}
+
+        self.off = schemaPos
         for _ in range(numSchemas):
-            off = f.off
-            schemas[off] = self._readSchema(f)
+            off = self.off
+            schemas[off] = self._readSchema()
 
-        return (tables, schemas)
+        self.off = tablePos
+        for _ in range(numTables):
+            print("Reading table at %x" %( self.off,))
+            tables.append(self._readTable())
         
 
-    def _readTable(self, f):
+    def _readTable(self):
         # f is a BReader
-        name = f.get_relstring()
-        nameHash = f.get_uint32()
+        name = self.get_relstring()
+        nameHash = self.get_uint32()
         probedHash = fnv1.fnv1((name or b"").lower(), 32)
         assert probedHash == nameHash, ("%08x != %08x (%r)" % (probedHash, nameHash, name))
-        schemaPos = f.get_off32()
-        dataType = f.get_uint32()
-        rowSize = f.get_uint32()
-        rowOffset = f.get_off32()
-        rowCount = f.get_uint32()
-        return self._TableData(name, schemaPos, dataType, rowSize, rowOffset, rowCount)
-    
-    def _readSchema(self, f):
+        schemaPos = self.get_off32()
+        dataType = self.get_uint32()
+        rowSize = self.get_uint32()
+        rowOffset = self.get_off32()
+        rowCount = self.get_uint32()
+        return self._TableData(name, self.schemas[schemaPos], dataType, rowSize, rowOffset, rowCount)
+
+    def _readSchema(self):
         # f is a BReader
-        name = f.get_relstring()
-        nameHash = f.get_uint32()
+        name = self.get_relstring()
+        nameHash = self.get_uint32()
         assert fnv1.fnv1((name or b"").lower(), 32) == nameHash
-        schemaHash = f.get_uint32()
-        schemaSize = f.get_uint32()
-        columnPos = f.get_off32()
-        numColumns = f.get_uint32()
+        schemaHash = self.get_uint32()
+        schemaSize = self.get_uint32()
+        columnPos = self.get_off32()
+        numColumns = self.get_uint32()
 
         columns = []
-        with f.at(columnPos):
+        with self.at(columnPos):
             for _ in range(numColumns):
-                cName = f.get_relstring()
-                cNameHash = f.get_uint32()
-                cDataType = f.get_uint16()
-                cFlags = f.get_uint16()
-                cOffset = f.get_uint32()
-                cSchemaPos = f.get_off32()
+                cName = self.get_relstring()
+                cNameHash = self.get_uint32()
+                cDataType = self.get_uint16()
+                cFlags = self.get_uint16()
+                cOffset = self.get_uint32()
+                cSchemaPos = self.get_off32()
                 columns.append(self._SchemaColumn(cName, cDataType, cFlags, cOffset, cSchemaPos))
         return self._Schema(name, schemaHash, schemaSize, tuple(columns)) # Tuplifying the columns results in less work for the GC
