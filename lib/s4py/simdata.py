@@ -46,7 +46,7 @@ class BReader:
             return off + res
 
     def _get_int(self, size, signed=False):
-        return int.from_bytes(self.get_raw_bytes(size)
+        return int.from_bytes(self.get_raw_bytes(size),
                               "little", signed=signed)
 
     def get_uint64(self): return self._get_int(8, False)
@@ -79,8 +79,9 @@ class BReader:
             return None
 
     def align(self, size):
-        assert size & (size - 1) == 0, "Must align to a power of two"
-        self.off = (self.off + size - 1) & (-size)
+        """Align input position to a multiple of size"""
+        off = (self.off + size - 1)
+        self.off = off - (off % size)
 
     @contextlib.contextmanager
     def at(self, posn):
@@ -97,8 +98,64 @@ class BReader:
         finally:
             self.off = saved
 
-class SimDataReader(BReader):
+class SimData:
+    "An object that is beholden to a schema"
+    __slots__ = ('schema_dict', 'value_dict', 'schema', 'name')
 
+    HIDDEN_MEMBERS = frozenset( ('HIDDEN_MEMBERS', ) + __slots__ )
+    # These are not directly accessible...
+
+    def __init__(self, schema):
+        schema_dict = {column.name: column
+                       for column in schema.columns}
+        value_dict = {column.name: None
+                      for column in schema.columns}
+
+        # We do funny things with setattribute and getattribute that
+        # refer to these values. To prevent using this class in a daft
+        # way, we block direct access to this class's instance
+        # dictionary except via super().__getattribute__ and
+        # super().__setattribute__
+        super().__setattr__('schema_dict', schema_dict)
+        super().__setattr__('value_dict', value_dict)
+        super().__setattr__('schema', schema)
+
+    def __getattribute__(self, name):
+        value_dict = super().__getattribute__('value_dict')
+        if name in value_dict:
+            return value_dict[name]
+        elif name in __class__.HIDDEN_MEMBERS: # We don't care about __getattribute__ here
+            return AttributeError("This object's instance members are hidden.")
+        else:
+            return super().__getattribute__(name)
+    def __setattribute__(self, name, value):
+        schema_dict = super().__getattribute__('schema_dict')
+        value_dict = super().__getattribute__('value_dict')
+        if name in schema_dict:
+            # TODO: validate data value against value_dict
+            value_dict[name] = value
+        else:
+            raise AttributeError("%s not found in schema" % (name,))
+
+    def __setitem__(self, name, value):
+        schema_dict = super().__getattribute__('schema_dict')
+        value_dict = super().__getattribute__('value_dict')
+        if name in schema_dict:
+            # TODO: validate data value against value_dict
+            value_dict[name] = value
+        else:
+            raise AttributeError("%s not found in schema" % (name,))
+    def __getitem__(self, name):
+        value_dict = super().__getattribute__('value_dict')
+        if name in schema_dict:
+            return value_dict[name]
+        else:
+            raise AttributeError("%s not found in schema" % (name,))
+
+    def __dir__(self):
+        return iter(super().__getattribute__("schema_dict"))
+
+class SimDataReader(BReader):
     _TableData = namedtuple("_TableData", "name schema data_type row_size row_pos row_count")
     _Schema = namedtuple("_Schema", "name schema_hash size columns")
     _SchemaColumn = namedtuple("_SchemaColumn", "name data_type flags offset schema_pos")
@@ -114,7 +171,7 @@ class SimDataReader(BReader):
         schemaPos = self.get_off32()
         numSchemas = self.get_int32()
 
-        self.tables = tables = []
+        self.tableData = tableData = []
         self.schemas = schemas = {}
 
         self.off = schemaPos
@@ -123,11 +180,18 @@ class SimDataReader(BReader):
             schemas[off] = self._readSchema()
 
         self.off = tablePos
+
+        self.patchups = [] # A set of closures that are called with no
+                           # arguments at the end of the parse
         for _ in range(numTables):
             print("Reading table at %x" %( self.off,))
-            tables.append(self._readTable())
+            tableData.append(self._readTableHdr())
 
-    def _readTable(self):
+        self.tables = list(map(self._readTable, tableData))
+        for patch in self.patchups:
+            patch()
+
+    def _readTableHdr(self):
         # f is a BReader
         name = self.get_relstring()
         nameHash = self.get_uint32()
@@ -138,7 +202,12 @@ class SimDataReader(BReader):
         rowSize = self.get_uint32()
         rowOffset = self.get_off32()
         rowCount = self.get_uint32()
-        return self._TableData(name, self.schemas[schemaPos], dataType, rowSize, rowOffset, rowCount)
+
+        if schemaPos is not None:
+            schema = self.schemas[schemaPos]
+        else:
+            schema = None
+        return self._TableData(name, schema, dataType, rowSize, rowOffset, rowCount)
 
     def _readSchema(self):
         # f is a BReader
@@ -159,15 +228,39 @@ class SimDataReader(BReader):
                 cFlags = self.get_uint16()
                 cOffset = self.get_uint32()
                 cSchemaPos = self.get_off32()
-                columns.append(self._SchemaColumn(cName, cDataType, cFlags, cOffset, cSchemaPos))
+                columns.append(self._SchemaColumn(cName.decode("utf-8"), cDataType, cFlags, cOffset, cSchemaPos))
         return self._Schema(name, schemaHash, schemaSize, tuple(columns)) # Tuplifying the columns results in less work for the GC
+
+    def _readTable(self, tableData):
+        content = []
+        # The template assumes that the table data is all contiguous
+        # immediately after the table headers. I'm not sure that
+        # actually works in general, and I'm almost certain that
+        # that's not how TS4 parses SD resources.
+        if tableData.schema is None:
+            # TODO: Special-case data_type == TYPE_CHAR8(1)
+            for row in range(tableData.row_count):
+                with self.at(tableData.row_pos + row * tableData.row_size):
+                    content.append(self._read_primitive(tableData.data_type))
+            return content
+        else:
+            assert tableData.schema.size == tableData.row_size, "Table data and schema don't correspond with each other"
+            for row in range(tableData.row_count):
+                rowBase = tableData.row_pos + row * tableData.row_size
+                rowData = SimData(tableData.schema)
+                for column in tableData.schema.columns:
+                    with self.at(rowBase + column.offset):
+                        # TODO: Figure out how to apply fixups
+                        rowData[column.name] = self._read_primitive(column.data_type)
+                content.append(rowData)
+            return content
 
     def _read_primitive(self, datatype):
         if datatype == 0: # BOOL
             # Boolean
             return self.get_int8() == 0
         elif datatype == 1: # CHAR8
-            return self.get_uint8().decode("latin1")
+            return chr(self.get_uint8())
         elif datatype == 2: # INT8
             return self.get_int8()
         elif datatype == 3: # UINT8
@@ -211,7 +304,10 @@ class SimDataReader(BReader):
             self.align(4)
             off = self.get_off32()
             count = self.get_uint32()
-            return ('vector', off, count)
+            if off is None:
+                return []
+            else:
+                return ('vector', off, count)
             # TODO: Read members based on table info
         elif datatype == 15:    # FLOAT2
             self.align(4)
@@ -224,16 +320,17 @@ class SimDataReader(BReader):
             return struct.unpack("<ffff", self.get_raw_bytes(16))
         elif datatype == 18:    # TABLESETREFERENCE
             self.align(8)
-            return ('tablesetref', self.read_uint64())
+            return ('tablesetref', self.get_uint64())
         elif datatype == 19:    # RESOURCEKEY
             self.align(8)
-            instance = self.read_uint64()
-            typ = self.read_uint32()
-            group = self.read_uint32()
+            instance = self.get_uint64()
+            typ = self.get_uint32()
+            group = self.get_uint32()
             return dbpf.ResourceID(group, instance, typ)
         elif datatype == 20:    # LOCKEY
             self.align(4)
-            return ('lockey', self.read_uint32())
+            # I'm pretty sure this refers to an stbl
+            return ('lockey', self.get_uint32())
         else:
             # Datatype 21 is defined as "TYPE_UNDEFINED". This is not
             # in any way useful.
