@@ -4,6 +4,7 @@
 
 from collections import namedtuple
 from . import fnv1, dbpf
+from .resource import ResourceID
 import contextlib
 import struct
 
