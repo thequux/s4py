@@ -3,107 +3,31 @@
 # likely to change *substantially* over the coming weeks.
 
 from collections import namedtuple
-from . import fnv1, dbpf
+from . import fnv1, dbpf, utils
 from .resource import ResourceID
 import contextlib
 import struct
+
+import yaml
 
 class FormatException(Exception):
     pass
 
 _dword = struct.Struct("=I")
 
-class BReader:
-    def __init__(self, bstr):
-        self.raw = bstr
-        self._off = 0
-    def __getitem__(self, index):
-        return bstr[index]
-    def seek(self, off):
-        assert off < len(self.raw)
-        self.off = off
 
-    @property
-    def off(self):
-        return self._off
-    @off.setter
-    def off(self, val):
-        assert val <= len(self.raw) # <= so that you can point one past the end
-        self._off = val
-
-    def get_raw_bytes(self, count):
-        res = self.raw[self.off:self.off+count]
-        self.off += count
-        return res
-
-    def get_off32(self):
-        """Read an offset relative to the current position; returns the absolute offset"""
-        off = self.off
-        res = self.get_int32()
-        if res == -0x80000000:
-            return None
-        else:
-            return off + res
-
-    def _get_int(self, size, signed=False):
-        return int.from_bytes(self.get_raw_bytes(size),
-                              "little", signed=signed)
-
-    def get_uint64(self): return self._get_int(8, False)
-    def get_int64(self): return self._get_int(8, True)
-
-    def get_uint32(self): return self._get_int(4, False)
-    def get_int32(self): return self._get_int(4, True)
-
-    def get_uint16(self): return self._get_int(2, False)
-    def get_int16(self): return self._get_int(2, True)
-
-    def get_uint8(self): return self._get_int(1, False)
-    def get_int8(self): return self._get_int(1, True)
-
-
-    def get_string(self):
-        """Read a null-terminated string"""
-        endOff = self.raw.index(b'\0', self.off)
-        res = self.raw[self.off:endOff]
-        self.off = endOff + 1
-        return res
-
-    def get_relstring(self):
-        """Read a string from the next offset, read as an off32"""
-        off = self.get_off32()
-        if off is not None:
-            with self.at(off):
-                return self.get_string()
-        else:
-            return None
-
-    def align(self, size):
-        """Align input position to a multiple of size"""
-        off = (self.off + size - 1)
-        self.off = off - (off % size)
-
-    @contextlib.contextmanager
-    def at(self, posn):
-        """Temporarily read from another place
-
-        This is intended to be used like:
-        with reader.at(offset):
-           # read some stuff
-        """
-        saved = self.off
-        try:
-            self.off = posn
-            yield
-        finally:
-            self.off = saved
 
 class SimData:
     "An object that is beholden to a schema"
-    __slots__ = ('schema_dict', 'value_dict', 'schema', 'name')
 
-    HIDDEN_MEMBERS = frozenset( ('HIDDEN_MEMBERS', ) + __slots__ )
     # These are not directly accessible...
+    HIDDEN_MEMBERS = frozenset((
+        'HIDDEN_MEMBERS',
+        'schema_dict',
+        'value_dict',
+        'schema',
+        'name'
+    ))
 
     def __init__(self, schema):
         schema_dict = {column.name: column
@@ -123,7 +47,11 @@ class SimData:
     def __getattribute__(self, name):
         value_dict = super().__getattribute__('value_dict')
         if name in value_dict:
-            return value_dict[name]
+            val = value_dict[name]
+            if isinstance(val, utils.Thunk):
+                return val.value
+            else:
+                return val
         elif name in __class__.HIDDEN_MEMBERS: # We don't care about __getattribute__ here
             return AttributeError("This object's instance members are hidden.")
         else:
@@ -147,15 +75,24 @@ class SimData:
             raise AttributeError("%s not found in schema" % (name,))
     def __getitem__(self, name):
         value_dict = super().__getattribute__('value_dict')
-        if name in schema_dict:
-            return value_dict[name]
+        if name in value_dict:
+            val = value_dict[name]
+            if isinstance(val, utils.Thunk):
+                return val.value
+            else:
+                return val
         else:
             raise AttributeError("%s not found in schema" % (name,))
 
     def __dir__(self):
         return iter(super().__getattribute__("schema_dict"))
 
-class SimDataReader(BReader):
+def _represent_SimData(dumper, sd):
+    mapping = {key:sd[key] for key in super(SimData, sd).__getattribute__('value_dict').keys()}
+    return dumper.represent_mapping('!s4/tuning', mapping)
+yaml.add_representer(SimData, _represent_SimData)
+
+class SimDataReader(utils.BReader):
     _TableData = namedtuple("_TableData", "name schema data_type row_size row_pos row_count")
     _Schema = namedtuple("_Schema", "name schema_hash size columns")
     _SchemaColumn = namedtuple("_SchemaColumn", "name data_type flags offset schema_pos")
@@ -184,12 +121,23 @@ class SimDataReader(BReader):
         self.patchups = [] # A set of closures that are called with no
                            # arguments at the end of the parse
         for _ in range(numTables):
-            print("Reading table at %x" %( self.off,))
             tableData.append(self._readTableHdr())
 
+        self.tables = []
+        self.content = {}
+        for thdr in tableData:
+            table = self._readTable(thdr)
+            self.tables.append(table)
+            if thdr.name is not None:
+                if thdr.row_count != 1:
+                    self.errors.append("Named table with >1 element")
+                    continue
+                else:
+                    self.content[thdr.name.decode('utf-8')] = table[0]
         self.tables = list(map(self._readTable, tableData))
         for patch in self.patchups:
             patch()
+
 
     def _readTableHdr(self):
         # f is a BReader
@@ -255,6 +203,19 @@ class SimDataReader(BReader):
                 content.append(rowData)
             return content
 
+    def resolve_ref(self, pos, count):
+        for i, thdr in enumerate(self.tableData):
+            if pos >= thdr.row_pos and pos < thdr.row_pos + thdr.row_size * thdr.row_count:
+                table_no = i
+                row_idx = int((pos - thdr.row_pos) / thdr.row_size)
+                if thdr.row_count < row_idx + count:
+                    raise FormatException("Object runs off end of table")
+                if row_idx * thdr.row_size + thdr.row_pos != pos:
+                    raise FormatException("Unaligned read of an object")
+                return (i, slice(row_idx, row_idx+count))
+        else:
+            raise FormatException("Object not in a table")
+
     def _read_primitive(self, datatype):
         if datatype == 0: # BOOL
             # Boolean
@@ -288,26 +249,43 @@ class SimDataReader(BReader):
             return struct.unpack("<f", self.get_raw_bytes(4))[0]
         elif datatype == 11: # STRING8
             self.align(4)
-            return self.get_relstring()
+            return self.get_relstring().decode('utf-8')
         elif datatype == 12:    # HASHEDSTRING8
             self.align(4)
             res = self.get_relstring()
             shash = self.get_uint32()
             # TODO: Validate hash
-            return res
+            return res.decode('utf-8')
         elif datatype == 13:    # OBJECT
             self.align(4)
             off = self.get_off32()
-            return ('object', off)
-            # TODO: figure out how to read object from offset
+            # TODO: figure out how to read convert
+            tbl_idx, row_slice = self.resolve_ref(off, 1)
+            #for i, thdr in enumerate(self.tableData):
+            #    if off >= thdr.row_pos and off < thdr.row_pos + thdr.row_size * thdr.row_count:
+            #        table_no = i
+            #        row_idx = int((off - thdr.row_pos) / thdr.row_size)
+            #        if row_idx * thdr.row_size + thdr.row_pos != off:
+            #            raise FormatException("Unaligned read of an object")
+            #        break
+            #else:
+            #    raise FormatException("Object not in a table")
+            def thunk():
+                return self.tables[tbl_idx][row_slice][0]
+            return utils.Thunk(thunk)
+
         elif datatype == 14:    # VECTOR
             self.align(4)
             off = self.get_off32()
             count = self.get_uint32()
-            if off is None:
+
+            if off is None or count == 0:
                 return []
             else:
-                return ('vector', off, count)
+                tbl_idx, row_slice = self.resolve_ref(off, 1)
+                def thunk():
+                    return self.tables[tbl_idx][row_slice]
+                return utils.Thunk(thunk)
             # TODO: Read members based on table info
         elif datatype == 15:    # FLOAT2
             self.align(4)

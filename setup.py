@@ -1,3 +1,4 @@
+#!/usr/bin/python3
 import ez_setup
 ez_setup.use_setuptools()
 
@@ -11,7 +12,7 @@ setup(
     url="http://github.com/thequux/s4py",
     packages = find_packages("lib"),
     package_dir = {'': 'lib'},
-    install_requires = ['Click'],
+    install_requires = ['Click', 'PyYAML'],
     entry_points = {
         'console_scripts': [
             # This way, you can also use python -ms4py

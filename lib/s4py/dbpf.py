@@ -144,7 +144,7 @@ class DBPFFile:
         elif item.compression[0] == 0x5A42:
             # BUG: Not sure if the gzip header is needed. If it is,
             # change -15 in the next line to 15
-            return zlib.decompress(ibuf, -15, item.size_decompressed) 
+            return zlib.decompress(ibuf, 15, item.size_decompressed)
 
 def decodeRefPack(ibuf):
     """Decode the DBPF compression. ibuf must quack like a bytes"""
