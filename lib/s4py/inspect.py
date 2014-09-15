@@ -55,6 +55,8 @@ class SimdataInspector(Inspector):
 class StblInspector(Inspector):
     type_code = 'STBL'
 
+    def content_name(self):
+        return "String table"
     def __init__(self, bstr):
         if bstr is not None:
             self.stbl = stbl.read_stbl(bstr)

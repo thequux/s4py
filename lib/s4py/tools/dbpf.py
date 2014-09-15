@@ -42,24 +42,28 @@ def parseFilter(s):
 
 
 @dbpf.command(help="extract files from a package")
-@click.option("--decode", metavar="TYPE",
-              default=None,
+@click.option("--type", "-t", metavar="TYPE",
+              default="auto",
               help="""The resource type to decode as, or 'auto' to autoselect""")
+@click.option("--decode", "-d", is_flag=True,
+              help="Decode the resource")
 @click.argument("file", type=click.Path(exists=True,
                                         dir_okay=False,
                                         readable=True))
 @click.argument("item")
-def cat(file, item, decode):
+def cat(file, item, type, decode):
     rid = ResourceID.from_string(item)
     dbfile = s4py.dbpf.DBPFFile(file)
     content = dbfile[rid]
-    if decode is None:
-        sys.stdout.buffer.write(content)
-    else:
-        if decode == 'auto' or decode == '':
-            decode = rid.type
-        inspector = inspect.find_inspector(decode)(content)
+    if decode:
+        if type == 'auto':
+            type = rid.type
+        else:
+            type = int(type, 16)
+        inspector = inspect.find_inspector(type)(content)
         inspector.pprint(sys.stdout)
+    else:
+        sys.stdout.buffer.write(content)
 
 @dbpf.command(help="extract files from a package")
 @click.option("--filter", multiple=True)
