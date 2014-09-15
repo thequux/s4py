@@ -1,7 +1,7 @@
 # These tools provide generic human-readable descriptions of the
 # contents of various filetypes. They may be fairly slow.
 
-from . import simdata
+from . import simdata, stbl
 import yaml
 
 type_registry = {}
@@ -50,6 +50,18 @@ class SimdataInspector(Inspector):
 
     def pprint(self, stream):
         yaml.dump(self.sd.content, stream)
+
+@inspects(0x220557DA)
+class StblInspector(Inspector):
+    type_code = 'STBL'
+
+    def __init__(self, bstr):
+        if bstr is not None:
+            self.stbl = stbl.read_stbl(bstr)
+
+    def pprint(self, stream):
+        for key,val in self.stbl.items():
+            stream.write("{0:08x} {1!r}\n".format(key,val))
 
 class XmlInspector(Inspector):
     type_code = "XML"

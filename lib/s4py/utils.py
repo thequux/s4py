@@ -1,5 +1,7 @@
 import weakref
 import contextlib
+class FormatException(Exception):
+    pass
 
 class WeakIdDict(dict):
     # This is completely untested
