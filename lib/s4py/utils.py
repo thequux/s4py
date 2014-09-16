@@ -1,4 +1,5 @@
 import weakref
+import io
 import contextlib
 class FormatException(Exception):
     pass
@@ -67,26 +68,21 @@ class Thunk:
 
 class BReader:
     def __init__(self, bstr):
+        if isinstance(bstr, bytes):
+            bstr = io.BytesIO(bstr)
         self.raw = bstr
-        self._off = 0
     def __getitem__(self, index):
         return bstr[index]
-    def seek(self, off):
-        assert off < len(self.raw)
-        self.off = off
 
     @property
     def off(self):
-        return self._off
+        return self.raw.tell()
     @off.setter
     def off(self, val):
-        assert val <= len(self.raw) # <= so that you can point one past the end
-        self._off = val
+        self.raw.seek(val)
 
     def get_raw_bytes(self, count):
-        res = self.raw[self.off:self.off+count]
-        self.off += count
-        return res
+        return self.raw.read(count)
 
     def get_off32(self):
         """Read an offset relative to the current position; returns the absolute offset"""
@@ -116,10 +112,21 @@ class BReader:
 
     def get_string(self):
         """Read a null-terminated string"""
-        endOff = self.raw.index(b'\0', self.off)
-        res = self.raw[self.off:endOff]
-        self.off = endOff + 1
-        return res
+        res_queue = []
+        while True:
+            pos = self.off
+            block = self.get_raw_bytes(16)
+            if len(block) == 0:
+                raise FormatException("Unexpected EOF")
+            zpos = block.index(b'\0')
+            if zpos != -1:
+                self.off = pos + zpos + 1 # +1 to seek past null byte
+                block = block[0:zpos]
+                res_queue.append(block)
+                break
+            else:
+                res_queue.append(block)
+        return b''.join(res_queue)
 
     def get_relstring(self):
         """Read a string from the next offset, read as an off32"""
