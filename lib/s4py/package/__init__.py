@@ -6,6 +6,7 @@ import os.path
 from .. import utils
 from .metapackage import MetaPackage
 from .dbpf import DbpfPackage
+from .dirpackage import DirPackage
 
 def open_package(filename, mode="r"):
     absname = os.path.abspath(filename)

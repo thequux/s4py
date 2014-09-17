@@ -13,12 +13,13 @@ class MetaPackage(AbstractPackage):
 
     @classmethod
     def open(cls, filename):
+        from .. import package
         # Metapackages are always read-only
         packages = []
         with open(filename, "r") as f:
             for name in f.readlines():
                 name = name.strip("\uFEFF\n")
-                packages.append(open_package(name, mode="r"))
+                packages.append(package.open_package(name, mode="r"))
         return cls(packages)
 
     def scan_index(self, filter=None):
@@ -39,7 +40,7 @@ class MetaPackage(AbstractPackage):
     def flush_index_cache(self):
         self._entry_cache = None
     def _reset_caches(self):
-        from . import stbl
+        from .. import stbl
         self._entry_cache = {}
         for package in self._package_list:
             for id in package.scan_index():

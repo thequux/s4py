@@ -68,7 +68,7 @@ class ResourceID(namedtuple("ResourceID", "group instance type")):
                     int(m.group('type'), 16),
                 )
         else:
-            raise Exception("Invalid rid %s" % (string,))
+            raise ValueError("Invalid rid %s" % (string,))
 def _represent_RID(dumper, rid):
     return dumper.represent_scalar('!s4/rid', str(rid))
 yaml.add_representer(ResourceID, _represent_RID)

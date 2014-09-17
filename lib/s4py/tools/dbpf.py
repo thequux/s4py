@@ -48,14 +48,14 @@ def parseFilter(s):
 @click.option("--type", "-t", metavar="TYPE",
               default=None,
               help="""The resource type to decode as (either an int or string; see inspect.py for details)""")
-@click.argument("PACKAGE", type=click.Path(exists=True,
-                                           dir_okay=False,
-                                           readable=True))
+@click.argument("PKG", metavar="package",
+                type=click.Path(exists=True,
+                                readable=True))
 @click.argument("item")
-def cat(package, item, type, decode):
+def cat(pkg, item, type, decode):
     """Extract items matching ITEM from PACKAGE"""
     rid = ResourceID.from_string(item)
-    dbfile = package.open_package(package, mode="r")
+    dbfile = package.open_package(pkg, mode="r")
     content = dbfile[rid].content
     if decode:
         if type is None:
@@ -73,9 +73,8 @@ def cat(package, item, type, decode):
 @dbpf.command(help="extract files from a package")
 @click.option("--filter", multiple=True)
 @click.option('-o','--outdir', help="Output directory", default="gen")
-@click.argument("file", type=click.Path(exists=True,
-                                        dir_okay=False,
-                                        readable=True))
+@click.argument("file", metavar="PKG", type=click.Path(exists=True,
+                                                       readable=True))
 def extract(file, filter, outdir):
     if filter:
         filters = AnyFilter(parseFilter(f) for f in filter)
@@ -85,15 +84,14 @@ def extract(file, filter, outdir):
     os.makedirs(outdir, exist_ok=True)
     for rid in dbfile.scan_index(filters):
         with open(os.path.join(outdir, rid.as_filename()), "wb") as ofile:
-            print(rid)
+            print(rid.as_filename())
             ofile.write(dbfile[rid].content)
 
 @dbpf.command(help="list files in a package")
 @click.option("--filter", multiple=True)
 @click.option("--long", "-l", is_flag=True)
-@click.argument("file", type=click.Path(exists=True,
-                                        dir_okay=False,
-                                        readable=True))
+@click.argument("file", metavar="PKG", type=click.Path(exists=True,
+                                                       readable=True))
 def ls(file, filter, long):
     if filter:
         filters = AnyFilter(parseFilter(f) for f in filter)

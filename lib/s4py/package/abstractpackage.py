@@ -1,5 +1,5 @@
 import abc
-from . import resource
+from .. import resource
 
 class AbstractPackage(abc.ABC):
 
