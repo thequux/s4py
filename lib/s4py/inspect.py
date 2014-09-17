@@ -37,9 +37,11 @@ class Inspector:
 
 
 @inspects(0x545ac67a)
+@inspects('simdata')
 class SimdataInspector(Inspector):
     smart = True
     type_code = 'data'
+    extension = 'simdata'
 
     def __init__(self, content):
         self.sd = simdata.SimDataReader(content)
@@ -52,8 +54,10 @@ class SimdataInspector(Inspector):
         yaml.dump(self.sd.content, stream)
 
 @inspects(0x220557DA)
+@inspects('stbl')
 class StblInspector(Inspector):
     type_code = 'STBL'
+    extension = 'stbl'
 
     def content_name(self):
         return "String table"

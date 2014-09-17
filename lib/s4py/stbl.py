@@ -22,10 +22,7 @@ def read_stbl(bstr):
     size = 0
     for _ in range(numEntries):
         keyHash = f.get_uint32()
-        flags = f.get_uint8() # What is in this?
+        flags = f.get_uint8() # What is in this? It's always 0.
         length = f.get_uint16()
         val = f.get_raw_bytes(length).decode('utf-8')
-        entries[keyHash] = val
-        size += sys.getsizeof(keyHash, val)
-    size += sys.getsizeof(entries)
-    return entries
+        yield keyHash, val

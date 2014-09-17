@@ -69,17 +69,23 @@ class Thunk:
 class BReader:
     def __init__(self, bstr):
         if isinstance(bstr, bytes):
+            self.raw_len = len(bstr)
             bstr = io.BytesIO(bstr)
+        else:
+            bstr.seek(0, io.SEEK_END)
+            self.raw_len = bstr.tell()
+            bstr.seek(0)
         self.raw = bstr
-    def __getitem__(self, index):
-        return bstr[index]
 
     @property
     def off(self):
         return self.raw.tell()
     @off.setter
     def off(self, val):
-        self.raw.seek(val)
+        if val <= self.raw_len:
+            self.raw.seek(val)
+        else:
+            raise ValueError("Seek off of end of file")
 
     def get_raw_bytes(self, count):
         return self.raw.read(count)
@@ -118,7 +124,7 @@ class BReader:
             block = self.get_raw_bytes(16)
             if len(block) == 0:
                 raise FormatException("Unexpected EOF")
-            zpos = block.index(b'\0')
+            zpos = block.find(b'\0')
             if zpos != -1:
                 self.off = pos + zpos + 1 # +1 to seek past null byte
                 block = block[0:zpos]
@@ -144,15 +150,18 @@ class BReader:
 
     @contextlib.contextmanager
     def at(self, posn):
-        """Temporarily read from another place
+        """Temporarily read from another place. If posn is None, just save the
+        current position.
 
         This is intended to be used like:
         with reader.at(offset):
            # read some stuff
+
         """
         saved = self.off
         try:
-            self.off = posn
+            if posn is not None:
+                self.off = posn
             yield
         finally:
             self.off = saved

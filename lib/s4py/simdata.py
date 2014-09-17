@@ -3,8 +3,9 @@
 # likely to change *substantially* over the coming weeks.
 
 from collections import namedtuple
-from . import fnv1, dbpf, utils
-from .resource import ResourceID
+from . import fnv1
+from . import resource
+from . import utils
 import contextlib
 import struct
 
@@ -259,21 +260,10 @@ class SimDataReader(utils.BReader):
         elif datatype == 13:    # OBJECT
             self.align(4)
             off = self.get_off32()
-            # TODO: figure out how to read convert
             tbl_idx, row_slice = self.resolve_ref(off, 1)
-            #for i, thdr in enumerate(self.tableData):
-            #    if off >= thdr.row_pos and off < thdr.row_pos + thdr.row_size * thdr.row_count:
-            #        table_no = i
-            #        row_idx = int((off - thdr.row_pos) / thdr.row_size)
-            #        if row_idx * thdr.row_size + thdr.row_pos != off:
-            #            raise FormatException("Unaligned read of an object")
-            #        break
-            #else:
-            #    raise FormatException("Object not in a table")
             def thunk():
                 return self.tables[tbl_idx][row_slice][0]
             return utils.Thunk(thunk)
-
         elif datatype == 14:    # VECTOR
             self.align(4)
             off = self.get_off32()
@@ -286,7 +276,6 @@ class SimDataReader(utils.BReader):
                 def thunk():
                     return self.tables[tbl_idx][row_slice]
                 return utils.Thunk(thunk)
-            # TODO: Read members based on table info
         elif datatype == 15:    # FLOAT2
             self.align(4)
             return struct.unpack("<ff", self.get_raw_bytes(8))
@@ -304,7 +293,7 @@ class SimDataReader(utils.BReader):
             instance = self.get_uint64()
             typ = self.get_uint32()
             group = self.get_uint32()
-            return dbpf.ResourceID(group, instance, typ)
+            return resource.ResourceID(group, instance, typ)
         elif datatype == 20:    # LOCKEY
             self.align(4)
             # I'm pretty sure this refers to an stbl

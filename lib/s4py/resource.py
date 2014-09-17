@@ -2,6 +2,21 @@ from collections import namedtuple
 import re
 import yaml
 
+class Resource(namedtuple("Resource", 'id locator size package')):
+    # Locator is a package-specific tuple that provides all necessary
+    # info for the package object to read the content.
+    @property
+    def content(self):
+        return self.package._get_content(self)
+
+    def __eq__(self, other):
+        return (self.id == other.id
+                and self.locator == other.locator
+                and self.size == other.size
+                and self.package is other.package)
+    def __ne__(self, other):
+        return not (self == other)
+
 class ResourceID(namedtuple("ResourceID", "group instance type")):
     """A DBPF resource ID. This can be used directly as a RID filter; it matches only itself"""
     __slots__ = ()
