@@ -1,88 +1,10 @@
-# Provides useful tools for working with packages, including metapackage support
-
-from . import resource
-from . import utils
-from collections import namedtuple
-import abc
 import io
-import os.path
+from collections import namedtuple
 
-class AbstractPackage(abc.ABC):
+from .abstractpackage import AbstractPackage
+from .. import resource
+from .. import utils
 
-    def __init__(self):
-        self.__stbl_cache = None
-
-    @abc.abstractmethod
-    def scan_index(self, filter=None):
-        pass
-
-    @abc.abstractmethod
-    def _get_content(self, resource):
-        """Retrieve the content from Resource (which is guaranteed to have
-        been returned from a __getitem__ call to this package)
-
-        """
-
-    @abc.abstractmethod
-    def __getitem__(self, item):
-        """Maps from a ResourceID to a Resource. Any other usage is an error.
-
-        This method MUST NOT use any caches that are flushed by
-        flush_index_cache.
-
-        """
-
-    def flush_index_cache(self):
-        """Flush the index cache to save memory. This method is optional; some
-        database formats may not need an index cache due to use of an
-        efficient file format."""
-
-    @property
-    def stbl(self):
-        if self.__stbl_cache is None:
-            self.__stbl_cache = {}
-            for stblid in self.scan_index(
-                    resource.ResourceFilter(type=0x220557DA)):
-                for key, value in stbl.read_stbl(self[stblid]):
-                    self.__stbl_cache[key] = value
-        return self.__stbl_cache
-
-class MetaPackage(AbstractPackage):
-    """A stack of packages, where the last package added is the first
-    package checked for a resource. Each package can be any object
-    that implements the AbstractPackage interface.
-    """
-    def __init__(self, package_list):
-        super().__init__()
-        self._package_list = package_list
-        self._reset_caches()
-
-    def scan_index(self, filter=None):
-        if filter is None:
-            return self._entry_cache.keys()
-        return (rid for rid in self._entry_cache
-                    if filter.match(rid))
-
-    def __getitem__(self, key):
-        return self._entry_cache[key]
-
-    def _get_content(self, resource):
-        # This should never actually get called as we shouldn't be in
-        # the package field of any resources. Still, if somebody
-        # *does* decide to call this method directly, it should work.
-        return _resource.package._get_content(resource)
-
-    def flush_index_cache(self):
-        self._entry_cache = None
-    def _reset_caches(self):
-        from . import stbl
-        self._entry_cache = {}
-        for package in self._package_list:
-            for id in package.scan_index():
-                self._entry_cache[id] = package[id]
-            package.flush_index_cache()
-
-# TODO: also store a reference to the DBPF that this entry is from
 class DbpfLocator(namedtuple("DbpfLocator", 'offset raw_len compression')):
     @property
     def deleted(self):
@@ -126,6 +48,7 @@ class _DbpfReader(utils.BReader):
                                         mnCreationTime, mnUpdatedTime,
                                         indexRecordEntryCount, indexRecordPos,
                                         indexRecordSize)
+            print(self.off)
             return self._header
 
     def get_index(self, package=None):
@@ -285,37 +208,3 @@ def decodeRefPack(ibuf):
             optr += 1
     # Done decompressing
     return bytes(obuf)
-
-################################################################################
-## Probing
-################################################################################
-
-def open_package(filename, mode="r"):
-    absname = os.path.abspath(filename)
-    import sys
-    if mode == "r":
-        if not os.path.exists(filename):
-            raise FileNotFoundError(
-                "No such file or directory: %s" % (filename,))
-        if os.path.isdir(filename):
-            return DirPackage(absname)
-        with open(filename, "rb") as f:
-            magic = f.read(4)
-            if magic == b"DBPF":
-                return DbpfPackage(filename)
-        if filename.lower().endswith(".meta"):
-            # It's a metapackage...
-            try:
-                return open_metapackage(filename)
-            except UnicodeError:
-                raise utils.FormatException("Invalid unicode in metapackage")
-        raise utils.FormatException("Couldn't identify package format")
-
-def open_metapackage(filename):
-    # Metapackages are always read-only
-    packages = []
-    with open(filename, "r") as f:
-        for name in f.readlines():
-            name = name.strip("\uFEFF\n")
-            packages.append(open_package(name, mode="r"))
-    return MetaPackage(packages)
