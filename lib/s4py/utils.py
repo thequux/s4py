@@ -66,7 +66,8 @@ class Thunk:
             self.setp = True
         return self._value
 
-class BReader:
+class BBase:
+    writable = False
     def __init__(self, bstr):
         if isinstance(bstr, bytes):
             self.raw_len = len(bstr)
@@ -77,9 +78,67 @@ class BReader:
             bstr.seek(0)
         self.raw = bstr
 
+    def close(self):
+        self.raw.close()
+
     @property
     def off(self):
         return self.raw.tell()
+    @off.setter
+    def off(self, val):
+        self.raw.seek(val)
+
+    @contextlib.contextmanager
+    def at(self, posn):
+        """Temporarily read from another place. If posn is None, just save the
+        current position.
+
+        This is intended to be used like:
+        with reader.at(offset):
+           # read some stuff
+
+        """
+        saved = self.off
+        try:
+            if posn is not None:
+                self.off = posn
+            yield
+        finally:
+            self.off = saved
+
+class BWriter(BBase):
+    writable = True
+
+    def put_raw_bytes(self, bstr):
+        self.raw.write(bstr)
+    def _put_int(self, i, len, signedp):
+        self.put_raw_bytes(i.to_bytes(len, "little", signed=signedp))
+    def put_int8(self, i):   self._put_int(i,  8, True)
+    def put_int16(self, i):  self._put_int(i, 16, True)
+    def put_int32(self, i):  self._put_int(i, 32, True)
+    def put_int64(self, i):  self._put_int(i, 64, True)
+
+    def put_uint8(self, i):  self._put_int(i,  8, False)
+    def put_uint16(self, i): self._put_int(i, 16, False)
+    def put_uint32(self, i): self._put_int(i, 32, False)
+    def put_uint64(self, i): self._put_int(i, 64, False)
+
+    def put_strz(self, s):
+        self.put_raw_bytes(s.encode('utf-8'))
+        s.put_raw_bytes(b'\0')
+
+class BReader(BBase):
+    def __init__(self, bstr):
+        super().__init__()
+        if isinstance(bstr, bytes):
+            self.raw_len = len(bstr)
+            bstr = io.BytesIO(bstr)
+        else:
+            bstr.seek(0, io.SEEK_END)
+            self.raw_len = bstr.tell()
+            bstr.seek(0)
+        self.raw = bstr
+
     @off.setter
     def off(self, val):
         if val <= self.raw_len:
@@ -148,20 +207,5 @@ class BReader:
         off = (self.off + size - 1)
         self.off = off - (off % size)
 
-    @contextlib.contextmanager
-    def at(self, posn):
-        """Temporarily read from another place. If posn is None, just save the
-        current position.
 
-        This is intended to be used like:
-        with reader.at(offset):
-           # read some stuff
-
-        """
-        saved = self.off
-        try:
-            if posn is not None:
-                self.off = posn
-            yield
-        finally:
-            self.off = saved
+class BReadWriter(BReader, BWriter)
