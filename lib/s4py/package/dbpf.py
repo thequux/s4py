@@ -1,5 +1,6 @@
 import io
 from collections import namedtuple
+import zlib
 
 from .abstractpackage import AbstractPackage
 from .. import resource
@@ -96,17 +97,88 @@ class _DbpfReader(utils.BReader):
                         entry_size_decompressed,
                         package)
 
+class _DbpfWriter:
+    def __init__(self, fstream):
+        self.f = utils.BWriter(fstream)
+        # Skip over header. The official docs say the header is 92
+        # bytes, but all the RE'd docs say 96. Treating an extra 4
+        # bytes as reserved won't hurt, so we just use 96 here
+        self.f.off = 96
+    def put_rsrc(self, rid, content):
+        off = self.f.off
+        zcontent = zlib.compress(content)
+        self.f.put_raw_bytes(zcontent)
+        locator = DbpfLocator(off, len(zcontent), (0x54A2, 1))
+        return locator
+    def write_index(self, idx):
+        with self.f.at(None):
+            idx_start = self.f.off
+            idx_count = 0
+            # Save the current position, in case we decide to write
+            # more content
+
+            # For now, don't try to optimize the index by sharing
+            # group/type/etc; it's fairly unlikely that it will be
+            # possible to save a significant amount of space unless
+            # the file is very small, in which case who cares?
+            self.f.put_uint32(0) # No flags
+
+            for rsrc in idx.values():
+                idx_count += 1
+                self.f.put_uint32(idx.rid.type)
+                self.f.put_uint32(idx.rid.group)
+                self.f.put_uint32(idx.rid.instance >> 32)
+                self.f.put_uint32(idx.rid.instance & 0xFFFFFFFF)
+                self.f.put_uint32(idx.locator.offset)
+                if idx.locator.raw_len & 0x80000000 != 0:
+                    raise FormatException("File must be smaller than 2GB")
+                # We always compress, so we always need the ExtendedCompression
+                # bit set
+                self.f.put_uint32(idx.locator.raw_len | 0x80000000)
+                self.f.put_uint32(idx.size)
+                self.f.put_uint16(idx.locator.compression[0])
+                self.f.put_uint16(idx.locator.compression[1])
+            idx_end = self.off
+        header = _DbpfReader._Header((2,1), (0,0), 0,0,
+                                     idx_count, idx_start, idx_end - idx_start)
+        self.put_header(header)
+    def put_header(self, header):
+        self.off = 0
+        self.f.put_raw_bytes(b'DBPF')
+        self.f.put_uint32(header.file_version[0])
+        self.f.put_uint32(header.file_version[1])
+        self.f.put_uint32(header.user_version[0])
+        self.f.put_uint32(header.user_version[1])
+        self.f.put_uint32(0)
+        self.f.put_uint32(header.ctime)
+        self.f.put_uint32(header.mtime)
+        self.f.put_uint32(0)
+        self.f.put_uint32(header.index_count)
+        self.f.put_uint32(0)
+        self.f.put_uint32(header.index_size)
+        self.f.put_uint32(0)
+        self.f.put_uint32(0)
+        self.f.put_uint32(0)
+        self.f.put_uint32(3)
+        self.f.put_uint32(header.index_pos)
+        for _ in range(6):
+            self.f.put_uint32(0)
 class DbpfPackage(AbstractPackage):
     """A Sims4 DBPF file. This is the format in Sims4 packages, worlds, etc"""
 
-    def __init__(self, name):
+    def __init__(self, name, mode="r"):
         super().__init__()
         if isinstance(name, io.RawIOBase):
             self.file = _DbpfReader(name)
         else:
-            self.file = _DbpfReader(open(name, "rb"))
-        self._index_cache = None
-
+            if mode == 'r':
+                self.file = _DbpfReader(open(name, "rb"))
+                self._index_cache = {}
+                self.writable = True
+            elif mode == 'w':
+                self.file = _DbpfWriter(open(name, "w+b"))
+                self._index_cache = None
+                self.writable = False
     def scan_index(self, filter=None):
         if self._index_cache is None:
             self._index_cache = {}
@@ -142,7 +214,22 @@ class DbpfPackage(AbstractPackage):
             return zlib.decompress(ibuf, 15, item.size)
 
     def flush_index_cache(self):
-        self._index_cache = None
+        # If we're writable, the in-memory "cache" is actually the
+        # *only* copy of the index, so it shouldn't be flushed.
+        if not self.writable:
+            self._index_cache = None
+
+    def commit(self):
+        if self.writable:
+            self.file.write_index(self._index_cache)
+    def put(self, rid, content):
+        if self.writable:
+            locator = self.file.put_rsrc(rid, content)
+            self._index_cache[rid] = resource.Resource(
+                rid, locator, len(content), self)
+    def close(close):
+        super().close()
+        self.file.close()
 
 def decodeRefPack(ibuf):
     """Decode the DBPF compression. ibuf must quack like a bytes"""

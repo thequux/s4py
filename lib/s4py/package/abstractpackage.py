@@ -40,3 +40,13 @@ class AbstractPackage(abc.ABC):
                 for key, value in stbl.read_stbl(self[stblid]):
                     self.__stbl_cache[key] = value
         return self.__stbl_cache
+
+    def close(self):
+        """Close the package, freeing any OS-level resources if necessary"""
+        self.commit()
+
+    def commit(self):
+        """Commit any outstanding changes to disk without closing the
+        file. Does not need to be called for read-only package access.
+
+        """
