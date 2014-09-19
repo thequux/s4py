@@ -89,11 +89,12 @@ class SimData:
         return iter(super().__getattribute__("schema_dict"))
 
 def _represent_SimData(dumper, sd):
-    mapping = {key:sd[key] for key in super(SimData, sd).__getattribute__('value_dict').keys()}
+    mapping = {key:sd[key]
+               for key in super(SimData, sd).__getattribute__('value_dict').keys()}
     return dumper.represent_mapping('!s4/tuning', mapping)
 yaml.add_representer(SimData, _represent_SimData)
 
-class SimDataReader(utils.BReader):
+class SimDataReader(utils.BinPacker):
     _TableData = namedtuple("_TableData", "name schema data_type row_size row_pos row_count")
     _Schema = namedtuple("_Schema", "name schema_hash size columns")
     _SchemaColumn = namedtuple("_SchemaColumn", "name data_type flags offset schema_pos")
@@ -141,7 +142,6 @@ class SimDataReader(utils.BReader):
 
 
     def _readTableHdr(self):
-        # f is a BReader
         name = self.get_relstring()
         nameHash = self.get_uint32()
         probedHash = fnv1.fnv1((name or b"").lower(), 32)
@@ -159,7 +159,6 @@ class SimDataReader(utils.BReader):
         return self._TableData(name, schema, dataType, rowSize, rowOffset, rowCount)
 
     def _readSchema(self):
-        # f is a BReader
         name = self.get_relstring()
         nameHash = self.get_uint32()
         assert fnv1.fnv1((name or b"").lower(), 32) == nameHash

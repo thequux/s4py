@@ -47,7 +47,8 @@ def parseFilter(s):
               help="Decode the resource")
 @click.option("--type", "-t", metavar="TYPE",
               default=None,
-              help="""The resource type to decode as (either an int or string; see inspect.py for details)""")
+              help="""The resource type to decode as (either """
+              """an int or string; see inspect.py for details)""")
 @click.argument("PKG", metavar="package",
                 type=click.Path(exists=True,
                                 readable=True))
@@ -70,22 +71,22 @@ def cat(pkg, item, type, decode):
     else:
         sys.stdout.buffer.write(content)
 
-@dbpf.command(help="extract files from a package")
+@dbpf.command(help="Convert between package formats")
 @click.option("--filter", multiple=True)
-@click.option('-o','--outdir', help="Output directory", default="gen")
+@click.option('-o','--out', help="Output directory", default="gen")
 @click.argument("file", metavar="PKG", type=click.Path(exists=True,
                                                        readable=True))
-def extract(file, filter, outdir):
+def convert(file, filter, out):
     if filter:
         filters = AnyFilter(parseFilter(f) for f in filter)
     else:
         filters = None
     dbfile = package.open_package(file, mode="r")
-    os.makedirs(outdir, exist_ok=True)
+    outpkg = package.open_package(out, mode="w")
     for rid in dbfile.scan_index(filters):
-        with open(os.path.join(outdir, rid.as_filename()), "wb") as ofile:
-            print(rid.as_filename())
-            ofile.write(dbfile[rid].content)
+        print(rid.as_filename())
+        outpkg.put(rid, dbfile[rid].content)
+    outpkg.commit()
 
 @dbpf.command(help="list files in a package")
 @click.option("--filter", multiple=True)
@@ -118,5 +119,4 @@ def ls(file, filter, long):
                 content_name=desc))
         else:
             print(idx.id)
-
 # s4py dbpf ls --filter ::545ac67a --filter ::6017E896  ../../docs/Examples/simsmodsquad-novelist.package

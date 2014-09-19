@@ -4,7 +4,7 @@ import sys
 def read_stbl(bstr):
     """Parse a string table (ID 0x220557DA)"""
 
-    f = utils.BReader(bstr)
+    f = utils.BinPacker(bstr)
     if f.get_raw_bytes(4) != b'STBL':
         raise utils.FormatException("Bad magic")
     version = f.get_uint16()

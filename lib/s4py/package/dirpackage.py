@@ -19,7 +19,7 @@ class DirPackage(AbstractPackage):
         already exists in the directory.
         """
 
-        self.path = path
+        self.path = os.path.abspath(path)
         if mode == "r":
             if not os.path.exists(self.path):
                 raise FileNotFoundError(
@@ -27,7 +27,8 @@ class DirPackage(AbstractPackage):
             self._index_cache = None
             self.writable = False
         elif mode == "w":
-            os.makedirs(self.path)
+            if not os.path.isdir(self.path):
+                os.makedirs(self.path)
             self._index_cache = None
             self.writable = True
 
@@ -64,3 +65,13 @@ class DirPackage(AbstractPackage):
         return self._index[rid]
     def flush_index_cache(self):
         self._index_cache = None
+
+    def put(self, rid, value):
+        fname = os.path.join(self.path, rid.as_filename())
+        with open(fname, "wb") as f:
+            f.write(value)
+        self._index[rid] = resource.Resource(
+            id=rid,
+            locator=fname,
+            size=len(value),
+            package=self)

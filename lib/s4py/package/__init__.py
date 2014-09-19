@@ -28,3 +28,8 @@ def open_package(filename, mode="r"):
             except UnicodeError:
                 raise utils.FormatException("Invalid unicode in metapackage")
         raise utils.FormatException("Couldn't identify package format")
+    elif mode == 'w':
+        if filename.endswith(".package"):
+            return DbpfPackage(filename, "w")
+        elif filename.endswith("/") or os.path.isdir(filename):
+            return DirPackage(filename, mode="w")

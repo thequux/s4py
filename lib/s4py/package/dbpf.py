@@ -11,7 +11,7 @@ class DbpfLocator(namedtuple("DbpfLocator", 'offset raw_len compression')):
     def deleted(self):
         return self.compression[0] == 0xFFE0
 
-class _DbpfReader(utils.BReader):
+class _DbpfReader(utils.BinPacker):
     _Header = namedtuple('_Header',
                          'file_version user_version ctime ' +
                          'mtime index_count index_pos index_size')
@@ -99,7 +99,7 @@ class _DbpfReader(utils.BReader):
 
 class _DbpfWriter:
     def __init__(self, fstream):
-        self.f = utils.BWriter(fstream)
+        self.f = utils.BinPacker(fstream, mode="w")
         # Skip over header. The official docs say the header is 92
         # bytes, but all the RE'd docs say 96. Treating an extra 4
         # bytes as reserved won't hurt, so we just use 96 here
@@ -125,44 +125,46 @@ class _DbpfWriter:
 
             for rsrc in idx.values():
                 idx_count += 1
-                self.f.put_uint32(idx.rid.type)
-                self.f.put_uint32(idx.rid.group)
-                self.f.put_uint32(idx.rid.instance >> 32)
-                self.f.put_uint32(idx.rid.instance & 0xFFFFFFFF)
-                self.f.put_uint32(idx.locator.offset)
-                if idx.locator.raw_len & 0x80000000 != 0:
+                self.f.put_uint32(rsrc.id.type)
+                self.f.put_uint32(rsrc.id.group)
+                self.f.put_uint32(rsrc.id.instance >> 32)
+                self.f.put_uint32(rsrc.id.instance & 0xFFFFFFFF)
+                self.f.put_uint32(rsrc.locator.offset)
+                if rsrc.locator.raw_len & 0x80000000 != 0:
                     raise FormatException("File must be smaller than 2GB")
                 # We always compress, so we always need the ExtendedCompression
                 # bit set
-                self.f.put_uint32(idx.locator.raw_len | 0x80000000)
-                self.f.put_uint32(idx.size)
-                self.f.put_uint16(idx.locator.compression[0])
-                self.f.put_uint16(idx.locator.compression[1])
-            idx_end = self.off
+                self.f.put_uint32(rsrc.locator.raw_len | 0x80000000)
+                self.f.put_uint32(rsrc.size)
+                self.f.put_uint16(rsrc.locator.compression[0])
+                self.f.put_uint16(rsrc.locator.compression[1])
+            idx_end = self.f.off
         header = _DbpfReader._Header((2,1), (0,0), 0,0,
                                      idx_count, idx_start, idx_end - idx_start)
         self.put_header(header)
     def put_header(self, header):
-        self.off = 0
-        self.f.put_raw_bytes(b'DBPF')
-        self.f.put_uint32(header.file_version[0])
-        self.f.put_uint32(header.file_version[1])
-        self.f.put_uint32(header.user_version[0])
-        self.f.put_uint32(header.user_version[1])
-        self.f.put_uint32(0)
-        self.f.put_uint32(header.ctime)
-        self.f.put_uint32(header.mtime)
-        self.f.put_uint32(0)
-        self.f.put_uint32(header.index_count)
-        self.f.put_uint32(0)
-        self.f.put_uint32(header.index_size)
-        self.f.put_uint32(0)
-        self.f.put_uint32(0)
-        self.f.put_uint32(0)
-        self.f.put_uint32(3)
-        self.f.put_uint32(header.index_pos)
-        for _ in range(6):
+        with self.f.at(0):
+            print(self.f.off)
+            self.f.put_raw_bytes(b'DBPF')
+            self.f.put_uint32(header.file_version[0])
+            self.f.put_uint32(header.file_version[1])
+            self.f.put_uint32(header.user_version[0])
+            self.f.put_uint32(header.user_version[1])
             self.f.put_uint32(0)
+            self.f.put_uint32(header.ctime)
+            self.f.put_uint32(header.mtime)
+            self.f.put_uint32(0)
+            self.f.put_uint32(header.index_count)
+            self.f.put_uint32(0)
+            self.f.put_uint32(header.index_size)
+            self.f.put_uint32(0)
+            self.f.put_uint32(0)
+            self.f.put_uint32(0)
+            self.f.put_uint32(3)
+            self.f.put_uint32(header.index_pos)
+            for _ in range(6):
+                self.f.put_uint32(0)
+            print(self.f.off)
 class DbpfPackage(AbstractPackage):
     """A Sims4 DBPF file. This is the format in Sims4 packages, worlds, etc"""
 
@@ -173,12 +175,12 @@ class DbpfPackage(AbstractPackage):
         else:
             if mode == 'r':
                 self.file = _DbpfReader(open(name, "rb"))
-                self._index_cache = {}
-                self.writable = True
-            elif mode == 'w':
-                self.file = _DbpfWriter(open(name, "w+b"))
                 self._index_cache = None
                 self.writable = False
+            elif mode == 'w':
+                self.file = _DbpfWriter(open(name, "w+b"))
+                self._index_cache = {}
+                self.writable = True
     def scan_index(self, filter=None):
         if self._index_cache is None:
             self._index_cache = {}
@@ -197,8 +199,8 @@ class DbpfPackage(AbstractPackage):
     def _get_content(self, item):
         assert isinstance(item, resource.Resource)
         assert item.package is self
-        self.file.off = item.locator.offset
-        ibuf = self.file.get_raw_bytes(item.locator.raw_len)
+        with self.file.at(item.locator.offset):
+            ibuf = self.file.get_raw_bytes(item.locator.raw_len)
 
         if item.locator.compression[0] == 0:
             return ibuf # uncompressed
@@ -227,6 +229,8 @@ class DbpfPackage(AbstractPackage):
             locator = self.file.put_rsrc(rid, content)
             self._index_cache[rid] = resource.Resource(
                 rid, locator, len(content), self)
+        else:
+            raise TypeError("Not a writable package")
     def close(close):
         super().close()
         self.file.close()

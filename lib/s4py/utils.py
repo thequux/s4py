@@ -66,9 +66,11 @@ class Thunk:
             self.setp = True
         return self._value
 
-class BBase:
+class BinPacker:
     writable = False
-    def __init__(self, bstr):
+    def __init__(self, bstr, mode="r"):
+        if mode == 'w':
+            self.writable = True
         if isinstance(bstr, bytes):
             self.raw_len = len(bstr)
             bstr = io.BytesIO(bstr)
@@ -86,7 +88,10 @@ class BBase:
         return self.raw.tell()
     @off.setter
     def off(self, val):
-        self.raw.seek(val)
+        if val <= self.raw_len or self.writable:
+            self.raw.seek(val)
+        else:
+            raise ValueError("Seek off of end of file")
 
     @contextlib.contextmanager
     def at(self, posn):
@@ -106,46 +111,25 @@ class BBase:
         finally:
             self.off = saved
 
-class BWriter(BBase):
-    writable = True
-
     def put_raw_bytes(self, bstr):
         self.raw.write(bstr)
     def _put_int(self, i, len, signedp):
         self.put_raw_bytes(i.to_bytes(len, "little", signed=signedp))
-    def put_int8(self, i):   self._put_int(i,  8, True)
-    def put_int16(self, i):  self._put_int(i, 16, True)
-    def put_int32(self, i):  self._put_int(i, 32, True)
-    def put_int64(self, i):  self._put_int(i, 64, True)
+    def put_int8(self, i):   self._put_int(i, 1, True)
+    def put_int16(self, i):  self._put_int(i, 2, True)
+    def put_int32(self, i):  self._put_int(i, 4, True)
+    def put_int64(self, i):  self._put_int(i, 8, True)
 
-    def put_uint8(self, i):  self._put_int(i,  8, False)
-    def put_uint16(self, i): self._put_int(i, 16, False)
-    def put_uint32(self, i): self._put_int(i, 32, False)
-    def put_uint64(self, i): self._put_int(i, 64, False)
+    def put_uint8(self, i):  self._put_int(i, 1, False)
+    def put_uint16(self, i): self._put_int(i, 2, False)
+    def put_uint32(self, i): self._put_int(i, 4, False)
+    def put_uint64(self, i): self._put_int(i, 8, False)
 
     def put_strz(self, s):
         self.put_raw_bytes(s.encode('utf-8'))
         s.put_raw_bytes(b'\0')
 
-class BReader(BBase):
-    def __init__(self, bstr):
-        super().__init__()
-        if isinstance(bstr, bytes):
-            self.raw_len = len(bstr)
-            bstr = io.BytesIO(bstr)
-        else:
-            bstr.seek(0, io.SEEK_END)
-            self.raw_len = bstr.tell()
-            bstr.seek(0)
-        self.raw = bstr
-
-    @off.setter
-    def off(self, val):
-        if val <= self.raw_len:
-            self.raw.seek(val)
-        else:
-            raise ValueError("Seek off of end of file")
-
+    # Reading methods
     def get_raw_bytes(self, count):
         return self.raw.read(count)
 
@@ -206,6 +190,3 @@ class BReader(BBase):
         """Align input position to a multiple of size"""
         off = (self.off + size - 1)
         self.off = off - (off % size)
-
-
-class BReadWriter(BReader, BWriter)
