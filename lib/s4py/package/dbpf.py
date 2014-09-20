@@ -91,7 +91,7 @@ class _DbpfReader(utils.BinPacker):
                 with self.at(None):
                     yield resource.Resource(
                         resource.ResourceID(entry_group,
-                                            entry_inst_ex << 32 | entry_inst_ex,
+                                            entry_inst_ex << 32 | entry_inst,
                                             entry_type),
                         locator,
                         entry_size_decompressed,
