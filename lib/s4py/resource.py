@@ -21,7 +21,8 @@ class ResourceID(namedtuple("ResourceID", "group instance type")):
     """A DBPF resource ID. This can be used directly as a RID filter; it matches only itself"""
     __slots__ = ()
 
-    DEFAULT_FMT = "colon"
+    DEFAULT_FMT = "maxis"
+
     FORMATTERS = {
         's4pe': 'S4_{id.type:08X}_{id.group:08X}_{id.instance:016X}',
         'colon': '{id.group:08x}:{id.instance:016x}:{id.type:08x}',
@@ -29,9 +30,9 @@ class ResourceID(namedtuple("ResourceID", "group instance type")):
     }
 
     PARSERS = {
-        's4pe': 'S4_{type}_{group}_{instance}(?:%%.*)?$',
-        'colon': '{group}:{instance}:{type}',
-        'maxis': '{group}!{instance}.{type}',
+        's4pe': '^S4_{type}_{group}_{instance}(?:%%.*)?$',
+        'colon': '^{group}:{instance}:{type}$',
+        'maxis': '^{group}!{instance}.{type}$',
     }
 
     for fmt in PARSERS:
@@ -60,7 +61,7 @@ class ResourceID(namedtuple("ResourceID", "group instance type")):
         # - Maxis format (group!instance.type)
         # - S4 format (S4_type_group_instance(?:%%.*)?)
         for parser in cls.PARSERS.values():
-            m = parser.fullmatch(string)
+            m = parser.match(string)
             if m:
                 return cls(
                     int(m.group('group'), 16),

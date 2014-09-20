@@ -1,7 +1,7 @@
 import abc
 from .. import resource
 
-class AbstractPackage(abc.ABC):
+class AbstractPackage(metaclass=abc.ABCMeta):
 
     def __init__(self):
         self.__stbl_cache = None
