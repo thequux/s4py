@@ -271,7 +271,7 @@ class SimDataReader(utils.BinPacker):
             if off is None or count == 0:
                 return []
             else:
-                tbl_idx, row_slice = self.resolve_ref(off, 1)
+                tbl_idx, row_slice = self.resolve_ref(off, count)
                 def thunk():
                     return self.tables[tbl_idx][row_slice]
                 return utils.Thunk(thunk)

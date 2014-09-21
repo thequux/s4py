@@ -49,7 +49,6 @@ class _DbpfReader(utils.BinPacker):
                                         mnCreationTime, mnUpdatedTime,
                                         indexRecordEntryCount, indexRecordPos,
                                         indexRecordSize)
-            print(self.off)
             return self._header
 
     def get_index(self, package=None):
@@ -108,7 +107,7 @@ class _DbpfWriter:
         off = self.f.off
         zcontent = zlib.compress(content)
         self.f.put_raw_bytes(zcontent)
-        locator = DbpfLocator(off, len(zcontent), (0x54A2, 1))
+        locator = DbpfLocator(off, len(zcontent), (0x5A42, 1))
         return locator
     def write_index(self, idx):
         with self.f.at(None):
@@ -144,7 +143,6 @@ class _DbpfWriter:
         self.put_header(header)
     def put_header(self, header):
         with self.f.at(0):
-            print(self.f.off)
             self.f.put_raw_bytes(b'DBPF')
             self.f.put_uint32(header.file_version[0])
             self.f.put_uint32(header.file_version[1])
@@ -164,7 +162,6 @@ class _DbpfWriter:
             self.f.put_uint32(header.index_pos)
             for _ in range(6):
                 self.f.put_uint32(0)
-            print(self.f.off)
 class DbpfPackage(AbstractPackage):
     """A Sims4 DBPF file. This is the format in Sims4 packages, worlds, etc"""
 
@@ -194,6 +191,8 @@ class DbpfPackage(AbstractPackage):
                 yield key
 
     def __getitem__(self, resource):
+        if self._index_cache == None:
+            next(self.scan_index())
         return self._index_cache[resource]
 
     def _get_content(self, item):

@@ -102,7 +102,7 @@ def ls(file, filter, long):
     for entry in dbfile.scan_index(filters):
         idx = dbfile[entry]
         if long:
-            inspector = inspect.find_inspector(idx.id.type)
+            inspector = inspect.find_inspector(entry.type)
             if inspector.smart:
                 inspector = inspector(idx.content)
             else:
