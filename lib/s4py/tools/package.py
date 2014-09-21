@@ -7,8 +7,8 @@ from .. import package
 from .. import tools
 from ..resource import ResourceID, ResourceFilter
 
-@tools.main.group()
-def dbpf():
+@tools.main.group(name="package")
+def pkg():
     pass
 
 class AnyFilter:
@@ -42,7 +42,7 @@ def parseFilter(s):
     return ResourceFilter(group, instance, type)
 
 
-@dbpf.command()
+@pkg.command()
 @click.option("--decode", "-d", is_flag=True,
               help="Decode the resource")
 @click.option("--type", "-t", metavar="TYPE",
@@ -71,7 +71,7 @@ def cat(pkg, item, type, decode):
     else:
         sys.stdout.buffer.write(content)
 
-@dbpf.command(help="Convert between package formats")
+@pkg.command(help="Convert between package formats")
 @click.option("--filter", multiple=True)
 @click.option('-o','--out', help="Output directory", default="gen")
 @click.argument("file", metavar="PKG", type=click.Path(exists=True,
@@ -88,7 +88,7 @@ def convert(file, filter, out):
         outpkg.put(rid, dbfile[rid].content)
     outpkg.commit()
 
-@dbpf.command(help="list files in a package")
+@pkg.command(help="list files in a package")
 @click.option("--filter", multiple=True)
 @click.option("--long", "-l", is_flag=True)
 @click.argument("file", metavar="PKG", type=click.Path(exists=True,
@@ -119,4 +119,4 @@ def ls(file, filter, long):
                 content_name=desc))
         else:
             print(idx.id)
-# s4py dbpf ls --filter ::545ac67a --filter ::6017E896  ../../docs/Examples/simsmodsquad-novelist.package
+# s4py package ls --filter ::545ac67a --filter ::6017E896  ../../docs/Examples/simsmodsquad-novelist.package

@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 def main():
-    import s4py.tools.dbpf
+    import s4py.tools.package
     import s4py.tools.misc
     s4py.tools.main()
 

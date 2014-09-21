@@ -17,10 +17,10 @@ output file existed before the build step executed, much less depend
 on its prior contents. This means that for the low-level build tool,
 if you maintain your assets as loose files in a directory and then run
 
-    s4py package assemble -o mymod.package sourcedir
+    s4py package convert -o mymod.package sourcedir
 
 `mymod.package` will contain ONLY the resources that were in
-sourcedir. (*NOTE:* the "package assemble" command doesn't exist yet)
+sourcedir.
 
 Status
 ======
@@ -32,8 +32,10 @@ compiler fairly soon; the assemble tool will follow fairly shortly
 after that.  If there are any specific tools that you need, don't
 hesitate to let me know by filing a feature request.
 
-All that s4py can do right now is list and extract the contents of a
-package.
+However, it is already a nice tool for browsing the contents of packages and
+for building complete packages from unpacked trees; see the `s4py package
+convert` command. It can also prettyprint the internals of some resources with
+`s4py package cat`.
 
 Installation
 ============
