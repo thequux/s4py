@@ -10,13 +10,35 @@ class TuningType(metaclass=abc.ABCMeta):
         pass
 
     @abc.abstractmethod
-    def binary_representer(self, val_list):
-        # Emitter is an collector of output tables. 
-        
-        # TODO: Think about how to collect val_list across all
-        # instances of this type and how to return references
-        """Return an function that insert all of the objects in val_list into
-        a binary stream
+    def represent_simdata(self, value, cache):
+        """Return a pair of (internal_fragment, external_fragment).
+
+        This function performs the first step of the following
+        serialization process:
+
+        1) Elements of the object graph are asked to produce internal
+           and external fragments.  An internal fragment is something
+           that fits inside a column in a table; an external fragment
+           is a set of rows of a table.  Both of these are high-level
+           python objects that represent the data *to be serialized*,
+           not necessarily the final serialized values.  (e.g., the
+           internal fragment for an OBJECT simply contains a reference
+           to its external fragment, and the internal fragment for a
+           number doesn't necessarily have a defined width).  The
+           external fragment MAY be None.
+
+        2) These external fragments are then packed into a reasonably
+           small number of tables, which are then allocated space in
+           the on-disk representation.  Each external fragment is then
+           updated with its final location on disk.
+
+        3) Each internal fragment is then asked to write its value to
+           the appropriate location.
+
+        To protect against cycles and maintain structure sharing,
+        there is a cache mapping from id(value) to the returned
+        pair. Implementations should check that first before
+        constructing new fragments.
 
         """
         pass
@@ -37,8 +59,6 @@ class TuningListType(TuningType):
                 return False
         else:
             return True
-    def binary_representer(self, val_list):
-        pass
     def represent_yaml(self, dumper, obj):
         return dumper.represent_sequence('tag:yaml.org,2002:seq', obj)
 
